@@ -6,11 +6,38 @@ import os
 
 load_dotenv()
 
+# Create Flask app
 app = Flask(__name__)
 app.config['MONGO_URI'] = os.getenv('MONGO_URI', 'mongodb://localhost:27017/jobboard')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
-mongo = PyMongo(app)
+# Debug: Print MongoDB URI (mask password)
+mongo_uri = app.config['MONGO_URI']
+print(f"\n{'='*50}")
+print(f"Connecting to MongoDB...")
+print(f"MongoDB URI: {mongo_uri.split('@')[0].split('//')[0]}//*****@{mongo_uri.split('@')[1] if '@' in mongo_uri else 'localhost'}")
+print(f"{'='*50}\n")
+
+# Initialize PyMongo
+try:
+    mongo = PyMongo(app)
+    # Store mongo in app extensions for easy access
+    app.mongo = mongo
+
+    # Test the connection
+    mongo.db.command('ping')
+
+    print(f"✓ MongoDB connected successfully!")
+    print(f"✓ Database name: {mongo.db.name}")
+    print(f"✓ Collections: {mongo.db.list_collection_names()}")
+    print(f"{'='*50}\n")
+except Exception as e:
+    print(f"✗ Error connecting to MongoDB: {e}")
+    print(f"  Please check your MongoDB URI and network connection")
+    print(f"{'='*50}\n")
+    mongo = None
+    app.mongo = None
+
 CORS(app)
 
 # Import blueprints

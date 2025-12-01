@@ -1,46 +1,25 @@
 from flask import Blueprint, request, current_app
 from bson.objectid import ObjectId
 from datetime import datetime
-from functools import wraps
-import jwt
+from utils.auth import token_required, applicant_required, employer_required
 
 applications_bp = Blueprint('applications', __name__)
 
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            try:
-                token = request.headers['Authorization'].split(" ")[1]
-            except:
-                return {'message': 'Invalid token'}, 401
-        
-        if not token:
-            return {'message': 'Token missing'}, 401
-        
-        try:
-            data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-            db = current_app.extensions['pymongo'].db
-            user = db.users.find_one({'_id': ObjectId(data['user_id'])})
-        except:
-            return {'message': 'Invalid token'}, 401
-        
-        return f(user, *args, **kwargs)
-    return decorated
+def get_db():
+    """Get database instance"""
+    return current_app.mongo.db
 
 @applications_bp.route('', methods=['POST'])
 @token_required
+@applicant_required
 def apply_for_job(user):
-    if user.get('role') != 'applicant':
-        return {'message': 'Only applicants'}, 403
     
     data = request.get_json()
     if 'job_id' not in data or 'resume_url' not in data:
         return {'message': 'Missing fields'}, 400
-    
-    db = current_app.extensions['pymongo'].db
-    
+
+    db = get_db()
+
     try:
         job = db.jobs.find_one({'_id': ObjectId(data['job_id'])})
     except:
@@ -76,11 +55,10 @@ def apply_for_job(user):
 
 @applications_bp.route('/my-applications', methods=['GET'])
 @token_required
+@applicant_required
 def get_my_applications(user):
-    if user.get('role') != 'applicant':
-        return {'message': 'Only applicants'}, 403
-    
-    db = current_app.extensions['pymongo'].db
+
+    db = get_db()
     apps = list(db.applications.find({'applicant_id': ObjectId(user['_id'])}).sort('applied_at', -1))
     
     for app in apps:
@@ -99,8 +77,8 @@ def get_my_applications(user):
 @applications_bp.route('/job/<job_id>/applications', methods=['GET'])
 @token_required
 def get_job_applications(user, job_id):
-    db = current_app.extensions['pymongo'].db
-    
+    db = get_db()
+
     try:
         job = db.jobs.find_one({'_id': ObjectId(job_id)})
     except:
@@ -121,16 +99,15 @@ def get_job_applications(user, job_id):
 
 @applications_bp.route('/<application_id>/status', methods=['PUT'])
 @token_required
+@employer_required
 def update_application_status(user, application_id):
-    if user.get('role') != 'employer':
-        return {'message': 'Only employers'}, 403
-    
+
     data = request.get_json()
     if 'status' not in data or data['status'] not in ['pending', 'accepted', 'rejected']:
         return {'message': 'Invalid status'}, 400
-    
-    db = current_app.extensions['pymongo'].db
-    
+
+    db = get_db()
+
     try:
         app = db.applications.find_one({'_id': ObjectId(application_id)})
     except:
